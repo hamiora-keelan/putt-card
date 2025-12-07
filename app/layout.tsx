@@ -10,7 +10,6 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "MiniCard"
   },
-  themeColor: "#020617",
   formatDetection: {
     telephone: false
   }

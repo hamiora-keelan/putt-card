@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, use } from "react";
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { Card } from "@/components/Card";
 import { GhostButton, PrimaryButton } from "@/components/Button";
@@ -24,20 +25,23 @@ type PlayerInput = {
 };
 
 type Props = {
-  params: {
+  params: Promise<{
     courseSlug: string;
-  };
+  }>;
 };
 
+const createInputRow = (): PlayerInput => ({
+  id: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `input-${Date.now()}-${Math.random()}`,
+  name: ""
+});
+
 export default function CoursePage({ params }: Props) {
-  const course = findCourseBySlug(params.courseSlug);
+  const { courseSlug } = use(params);
+  const course = findCourseBySlug(courseSlug);
   const [view, setView] = useState<ViewState>("landing");
   const [scoreState, setScoreState] = useState<ScoreState | null>(null);
-  const createInputRow = (): PlayerInput => ({
-    id: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `input-${Date.now()}-${Math.random()}`,
-    name: ""
-  });
-  const [playerInputs, setPlayerInputs] = useState<PlayerInput[]>([createInputRow(), createInputRow()]);
+
+  const [playerInputs, setPlayerInputs] = useState<PlayerInput[]>(() => [createInputRow(), createInputRow()]);
   const [storageWarning, setStorageWarning] = useState(false);
   const [currentHoleIndex, setCurrentHoleIndex] = useState(0);
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
@@ -45,61 +49,8 @@ export default function CoursePage({ params }: Props) {
   const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const hasFocusedRef = useRef(false);
 
-  useEffect(() => {
-    setStorageWarning(!storageAvailable());
-  }, []);
-
-  useEffect(() => {
-    if (!course) return;
-    const saved = loadState(course.slug);
-    if (saved) {
-      setScoreState(saved);
-      setView("scorecard");
-    } else {
-      setView("landing");
-    }
-  }, [course]);
-
-  useEffect(() => {
-    if (view === "players" && !hasFocusedRef.current) {
-      const id = window.setTimeout(() => {
-        inputRefs.current[0]?.focus();
-        hasFocusedRef.current = true;
-      }, 0);
-      return () => window.clearTimeout(id);
-    }
-    return undefined;
-  }, [view]);
-
-  if (!course) {
-    return (
-      <AppShell>
-        <div className="flex flex-1 flex-col items-start justify-center space-y-3">
-          <h1 className="text-2xl font-semibold">Course not found</h1>
-          <p className="text-sm text-muted">Check the link on the QR code or pick a course from the home page.</p>
-          <a
-            href="/"
-            className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-muted hover:border-primary hover:text-text"
-          >
-            Back home
-          </a>
-        </div>
-      </AppShell>
-    );
-  }
-
-  const themeStyle: React.CSSProperties = {
-    ["--color-bg" as string]: course.theme?.bg,
-    ["--color-surface" as string]: course.theme?.surface,
-    ["--color-primary" as string]: course.theme?.primary,
-    ["--color-primary-soft" as string]: course.theme?.primarySoft,
-    ["--color-accent" as string]: course.theme?.accent
-  };
-
-  const hasActiveRound = Boolean(scoreState);
-
   const totals = useMemo(() => {
-    if (!scoreState) return [];
+    if (!course || !course.holes || !scoreState) return [];
     return scoreState.players.map((player) => {
       let total = 0;
       for (let i = 0; i < course.holes; i += 1) {
@@ -110,7 +61,7 @@ export default function CoursePage({ params }: Props) {
       }
       return { player, total };
     });
-  }, [course.holes, scoreState]);
+  }, [course, scoreState]);
 
   const hasAnyScore = useMemo(() => {
     if (!scoreState) return false;
@@ -119,7 +70,7 @@ export default function CoursePage({ params }: Props) {
     );
   }, [scoreState]);
 
-  const parTotal = useMemo(() => course.par?.reduce((acc, val) => acc + val, 0) ?? null, [course.par]);
+  const parTotal = useMemo(() => course?.par?.reduce((acc, val) => acc + val, 0) ?? null, [course]);
 
   const runningSummary = useMemo(() => {
     if (!totals.length || !hasAnyScore) return "No scores yet";
@@ -137,7 +88,56 @@ export default function CoursePage({ params }: Props) {
     }));
   }, [totals]);
 
+  useEffect(() => {
+    if (!course) return;
+    const saved = loadState(course.slug);
+    if (saved) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setScoreState(saved);
+
+      setView("scorecard");
+    } else {
+
+      setView("landing");
+    }
+  }, [course]);
+
+  useEffect(() => {
+    if (view === "players" && !hasFocusedRef.current) {
+      const id = window.setTimeout(() => {
+        inputRefs.current[0]?.focus();
+        hasFocusedRef.current = true;
+      }, 0);
+      return () => window.clearTimeout(id);
+    }
+    return undefined;
+  }, [view]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setStorageWarning(!storageAvailable());
+  }, []);
+
+  if (!course) {
+    return (
+      <AppShell>
+        <div className="flex flex-1 flex-col items-start justify-center space-y-3">
+          <h1 className="text-2xl font-semibold">Course not found</h1>
+          <p className="text-sm text-muted">Check the link on the QR code or pick a course from the home page.</p>
+          <Link
+            href="/"
+            className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-muted hover:border-primary hover:text-text"
+          >
+            Back home
+          </Link>
+        </div>
+      </AppShell>
+    );
+  }
+
+
   const handleStartNewRound = () => {
+    if (!course) return;
     clearState(course.slug);
     setScoreState(null);
     setPlayerInputs([createInputRow(), createInputRow()]);
@@ -145,6 +145,16 @@ export default function CoursePage({ params }: Props) {
     setCurrentHoleIndex(0);
     setView("players");
   };
+
+  const themeStyle: React.CSSProperties = {
+    ["--color-bg" as string]: course.theme?.bg,
+    ["--color-surface" as string]: course.theme?.surface,
+    ["--color-primary" as string]: course.theme?.primary,
+    ["--color-primary-soft" as string]: course.theme?.primarySoft,
+    ["--color-accent" as string]: course.theme?.accent
+  };
+
+  const hasActiveRound = Boolean(scoreState);
 
   const handleResumeRound = () => {
     if (scoreState) {
@@ -546,10 +556,10 @@ export default function CoursePage({ params }: Props) {
           </div>
         ) : null}
 
-        {view === "landing" && <CourseLandingView />}
-        {view === "players" && <AddPlayersView />}
-        {view === "scorecard" && <ScorecardView />}
-        {view === "summary" && <SummaryView />}
+        {view === "landing" && CourseLandingView()}
+        {view === "players" && AddPlayersView()}
+        {view === "scorecard" && ScorecardView()}
+        {view === "summary" && SummaryView()}
 
         {showCompleteConfirm ? (
           <div className="fixed inset-0 z-20 flex items-end justify-center bg-bg/80 px-4 pb-6">

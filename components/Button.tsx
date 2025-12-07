@@ -1,4 +1,4 @@
-/* eslint-disable react/button-has-type */
+
 "use client";
 
 import React from "react";
